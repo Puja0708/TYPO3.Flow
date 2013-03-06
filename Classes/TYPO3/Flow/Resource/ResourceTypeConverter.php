@@ -73,6 +73,7 @@ class ResourceTypeConverter extends \TYPO3\Flow\Property\TypeConverter\AbstractT
 	 */
 	public function convertFrom($source, $targetType, array $convertedChildProperties = array(), \TYPO3\Flow\Property\PropertyMappingConfigurationInterface $configuration = NULL) {
 		if (!isset($source['error']) || $source['error'] === \UPLOAD_ERR_NO_FILE) {
+			/* TODO: FIX BEHAVIOR FOR "SUBMITTEDFILE" */
 			if (isset($source['submittedFile']) && isset($source['submittedFile']['filename']) && isset($source['submittedFile']['resourcePointer'])) {
 				$resourcePointer = $this->persistenceManager->getObjectByIdentifier($source['submittedFile']['resourcePointer'], 'TYPO3\Flow\Resource\ResourcePointer');
 				if ($resourcePointer) {
@@ -101,9 +102,11 @@ class ResourceTypeConverter extends \TYPO3\Flow\Property\TypeConverter\AbstractT
 			return $this->convertedResources[$source['tmp_name']];
 		}
 
-		$resource = $this->resourceManager->importUploadedResource($source);
+		/* TODO: Make $collectionName configurable in HTML form */
+		$collectionName = 'persistentResources';
+		$resource = $this->resourceManager->importUploadedResource($source, $collectionName);
 		if ($resource === FALSE) {
-			return new \TYPO3\Flow\Error\Error('The resource manager could not create a Resource instance.', 1264517906);
+			return new \TYPO3\Flow\Error\Error('The resource manager could not create a Resource instance for an uploaded file.' , 1264517906);
 		} else {
 			$this->convertedResources[$source['tmp_name']] = $resource;
 			return $resource;

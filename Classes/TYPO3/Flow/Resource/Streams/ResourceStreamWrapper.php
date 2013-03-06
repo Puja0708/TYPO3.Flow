@@ -12,13 +12,15 @@ namespace TYPO3\Flow\Resource\Streams;
  *                                                                        */
 
 use TYPO3\Flow\Annotations as Flow;
+use TYPO3\Flow\Utility\Files;
 
 /**
  * A stream wrapper for package resources.
  */
-class ResourceStreamWrapper implements \TYPO3\Flow\Resource\Streams\StreamWrapperInterface {
+class ResourceStreamWrapper implements StreamWrapperInterface {
 
 	/**
+	 * @const string
 	 */
 	const SCHEME = 'resource';
 
@@ -66,7 +68,7 @@ class ResourceStreamWrapper implements \TYPO3\Flow\Resource\Streams\StreamWrappe
 	 * Any resources which were locked, or allocated, during opening and use of
 	 * the directory stream should be released.
 	 *
-	 * @return boolean always TRUE
+	 * @return boolean Always TRUE
 	 */
 	public function closeDirectory() {
 		closedir($this->handle);
@@ -468,7 +470,7 @@ class ResourceStreamWrapper implements \TYPO3\Flow\Resource\Streams\StreamWrappe
 		}
 
 		$package = $this->packageManager->getPackage($uriParts['host']);
-		$resourcePath = \TYPO3\Flow\Utility\Files::concatenatePaths(array($package->getResourcesPath(), $uriParts['path']));
+		$resourcePath = Files::concatenatePaths(array($package->getResourcesPath(), $uriParts['path']));
 
 		if ($checkForExistence === FALSE || file_exists($resourcePath)) {
 			return $resourcePath;

@@ -541,7 +541,7 @@ class Request extends Message {
 			} else {
 				$newFieldPaths = $this->calculateFieldPaths($fieldInformation['error'], $firstLevelFieldName);
 				array_walk($newFieldPaths,
-					function(&$value, $key) {
+					function(&$value) {
 						$value = explode('/', $value);
 					}
 				);

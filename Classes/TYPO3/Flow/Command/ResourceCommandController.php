@@ -28,12 +28,6 @@ class ResourceCommandController extends CommandController {
 	protected $packageManager;
 
 	/**
-	 * @Flow\Inject
-	 * @var \TYPO3\Flow\Resource\Publishing\ResourcePublisher
-	 */
-	protected $resourcePublisher;
-
-	/**
 	 * Publish static resources
 	 *
 	 * This command triggers publication of static assets of all packages to the
@@ -43,16 +37,6 @@ class ResourceCommandController extends CommandController {
 	 * @return void
 	 */
 	public function publishStaticCommand($package = NULL) {
-		if ($package !== NULL) {
-			$package = $this->packageManager->getPackage($package);
-			$this->outputLine($package->getPackageKey());
-			$this->resourcePublisher->publishStaticResources($package->getResourcesPath() . 'Public/', $package->getPackageKey());
-		} else {
-			foreach ($this->packageManager->getActivePackages() as $package) {
-				$this->outputLine($package->getPackageKey());
-				$this->resourcePublisher->publishStaticResources($package->getResourcesPath() . 'Public/', $package->getPackageKey());
-			}
-		}
 	}
 
 }

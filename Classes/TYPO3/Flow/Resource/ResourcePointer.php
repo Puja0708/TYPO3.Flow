@@ -11,19 +11,17 @@ namespace TYPO3\Flow\Resource;
  * The TYPO3 project - inspiring people to share!                         *
  *                                                                        */
 
-use Doctrine\ORM\Mapping as ORM;
 use TYPO3\Flow\Annotations as Flow;
 
 /**
  * Model describing a resource pointer
  *
- * @Flow\ValueObject
+ * @deprecated since 2.1.0
  */
 class ResourcePointer {
 
 	/**
 	 * @var string
-	 * @ORM\Id
 	 */
 	protected $hash;
 
@@ -32,6 +30,7 @@ class ResourcePointer {
 	 *
 	 * @param string $hash
 	 * @throws \InvalidArgumentException
+	 * @deprecated since 2.1.0
 	 */
 	public function __construct($hash) {
 		if (!is_string($hash) || strlen($hash) !== 40) {
@@ -44,6 +43,7 @@ class ResourcePointer {
 	 * Returns the hash of this resource
 	 *
 	 * @return string A 40 character hexadecimal sha1 hash over the content of this resource
+	 * @deprecated since 2.1.0
 	 */
 	public function getHash() {
 		return $this->hash;
@@ -53,6 +53,7 @@ class ResourcePointer {
 	 * Returns a string representation of this resource object.
 	 *
 	 * @return string The hash of this resource
+	 * @deprecated since 2.1.0
 	 */
 	public function __toString() {
 		return $this->hash;

@@ -12,78 +12,36 @@ namespace TYPO3\Flow\Resource\Publishing;
  *                                                                        */
 
 use TYPO3\Flow\Annotations as Flow;
+use TYPO3\Flow\Resource\Resource;
 
 /**
- * Support functions for handling assets
+ * NOTE: Although this class never belonged to the public API, the method
+ *       getPersistentResourceWebUri() has been used in various packages.
+ *       In order to keep backwards compatibility, we decided to leave this class
+ *       containing the one method in 2.x.x version of Flow and mark it as deprecated.
+ *
+ *       Please make sure to use the new ResourceManager API instead!
  *
  * @Flow\Scope("singleton")
+ * @deprecated since 2.1.0
  */
 class ResourcePublisher {
 
 	/**
-	 * @var \TYPO3\Flow\Resource\Publishing\ResourcePublishingTargetInterface
+	 * @Flow\Inject
+	 * @var \TYPO3\Flow\Resource\ResourceManager
 	 */
-	protected $resourcePublishingTarget;
-
-	/**
-	 * Injects the resource publishing target
-	 *
-	 * @param \TYPO3\Flow\Resource\Publishing\ResourcePublishingTargetInterface $resourcePublishingTarget
-	 * @return void
-	 */
-	public function injectResourcePublishingTarget(\TYPO3\Flow\Resource\Publishing\ResourcePublishingTargetInterface $resourcePublishingTarget) {
-		$this->resourcePublishingTarget = $resourcePublishingTarget;
-	}
-
-	/**
-	 * Recursively publishes all resources found in the specified source directory
-	 * to the given destination.
-	 *
-	 * @param string $sourcePath Path containing the resources to publish
-	 * @param string $relativeTargetPath Path relative to the public resources directory where the given resources are mirrored to
-	 * @return boolean TRUE if publication succeeded or FALSE if the resources could not be published
-	 */
-	public function publishStaticResources($sourcePath, $relativeTargetPath) {
-		return $this->resourcePublishingTarget->publishStaticResources($sourcePath, $relativeTargetPath);
-	}
-
-	/**
-	 * Publishes a persistent resource
-	 *
-	 * @param \TYPO3\Flow\Resource\Resource $resource The resource to publish
-	 * @return mixed Either the web URI of the published resource or FALSE if the resource source file doesn't exist
-	 */
-	public function publishPersistentResource(\TYPO3\Flow\Resource\Resource $resource) {
-		return $this->resourcePublishingTarget->publishPersistentResource($resource);
-	}
-
-	/**
-	 * Unpublishes a persistent resource
-	 *
-	 * @param \TYPO3\Flow\Resource\Resource $resource The resource to unpublish
-	 * @return boolean TRUE if at least one file was removed, FALSE otherwise
-	 */
-	public function unpublishPersistentResource(\TYPO3\Flow\Resource\Resource $resource) {
-		return $this->resourcePublishingTarget->unpublishPersistentResource($resource);
-	}
-
-	/**
-	 * Returns the base URI pointing to the published static resources
-	 *
-	 * @return string The base URI pointing to web accessible static resources
-	 */
-	public function getStaticResourcesWebBaseUri() {
-		return $this->resourcePublishingTarget->getStaticResourcesWebBaseUri();
-	}
+	protected $resourceManager;
 
 	/**
 	 * Returns the URI pointing to the published persistent resource
 	 *
 	 * @param \TYPO3\Flow\Resource\Resource $resource The resource to publish
 	 * @return mixed Either the web URI of the published resource or FALSE if the resource source file doesn't exist or the resource could not be published for other reasons
+	 * @deprecated since 2.1.0
 	 */
-	public function getPersistentResourceWebUri($resource) {
-		return $this->resourcePublishingTarget->getPersistentResourceWebUri($resource);
+	public function getPersistentResourceWebUri(Resource $resource) {
+		return $this->resourceManager->getPublicPersistentResourceUri($resource);
 	}
 }
 

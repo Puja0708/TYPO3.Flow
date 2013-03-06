@@ -191,18 +191,58 @@ TYPO3:
 
     resource:
 
-      publishing:
+      # Definition of resource storages provided by the Flow core.
+      # Storages are used for storing and retrieving resources.
+      storages:
 
-        # If enabled, the publisher will check if the static resources of active packages
-        # have changed and if so publishes them again. If disabled, static package resources
-        # are only published once and changes are unnoticed until the related cache is flushed.
-        detectPackageResourceChanges: FALSE
+        #
+        defaultPersistentResourcesStorage:
+          storage: 'TYPO3\Flow\Resource\Storage\FileSystemStorage'
+          storageOptions:
+            path: %FLOW_PATH_DATA%Persistent/Resources/
 
-        # Options for the File System publishing target
-        fileSystem:
+        #
+        defaultStaticResourcesStorage:
+          storage: 'TYPO3\Flow\Resource\Storage\PackageStorage'
 
-          # Strategy for mirroring files: Either "copy" or "link"
-          mirrorMode: link
+      # Definition of the default resource collections.
+      # Collections are used to bundle / group static or persistent resources
+      # for common processing and publication.
+      collections:
+
+        # Collection which contains all persistent resources
+        persistentResources:
+          sources:
+            -
+              storage: 'defaultPersistentResourcesStorage'
+          target: 'localWebDirectoryPersistentResourcesTarget'
+
+        # Collection which contains all static resources
+        staticResources:
+          sources:
+            -
+              storage: 'defaultStaticResourcesStorage'
+              directories: '*/Resources/Public'
+          target: 'localWebDirectoryStaticResourcesTarget'
+
+      # Definition of the basic resource publication targets.
+      targets:
+
+        # Target for publishing persistent resources to the local web directory
+        localWebDirectoryPersistentResourcesTarget:
+          target: 'TYPO3\Flow\Resource\Target\FileSystemTarget'
+          targetOptions:
+            path: '%FLOW_PATH_WEB%_Resources/Persistent/'
+            baseUri: '_Resources/Persistent/'
+            mirrorMode: 'link'
+
+        # Target for publishing static resources to the local web directory
+        localWebDirectoryStaticResourcesTarget:
+          target: 'TYPO3\Flow\Resource\Target\FileSystemTarget'
+          targetOptions:
+            path: '%FLOW_PATH_WEB%_Resources/Static/'
+            baseUri: '_Resources/Static/'
+            mirrorMode: 'link'
 
     security:
 

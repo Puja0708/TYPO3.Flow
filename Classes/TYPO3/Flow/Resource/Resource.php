@@ -23,36 +23,42 @@ use TYPO3\Flow\Utility\MediaTypes;
 class Resource {
 
 	/**
-	 * @var \TYPO3\Flow\Resource\ResourcePointer
-	 * @ORM\ManyToOne(cascade={"persist", "merge"})
-	 */
-	protected $resourcePointer;
-
-	/**
-	 * @var \TYPO3\Flow\Resource\Publishing\AbstractPublishingConfiguration
-	 * @ORM\ManyToOne
-	 */
-	protected $publishingConfiguration;
-
-	/**
 	 * @var string
 	 * @Flow\Validate(type="StringLength", options={ "maximum"=100 })
+	 * @ORM\Column(length=100)
 	 */
 	protected $filename = '';
 
 	/**
 	 * @var string
 	 * @Flow\Validate(type="StringLength", options={ "maximum"=100 })
+	 * @ORM\Column(length=100)
 	 */
 	protected $fileExtension = '';
 
 	/**
-	 * Returns the SHA1 of the ResourcePointer this Resource uses.
+	 * SHA1 hash identifying the content attached to this resource
+	 *
+	 * @var string
+	 * @ORM\Column(length=40)
+	 */
+	protected $hash;
+
+	/**
+	 * Name of a collection whose storage is used for storing this resource and whose
+	 * target is used for publishing.
+	 *
+	 * @var string
+	 */
+	protected $collectionName = 'persistentResources';
+
+	/**
+	 * Returns the SHA1 of the content this Resource is related to
 	 *
 	 * @return string
 	 */
 	public function __toString() {
-		return $this->resourcePointer->__toString();
+		return $this->hash;
 	}
 
 	/**
@@ -62,7 +68,7 @@ class Resource {
 	 * @api
 	 */
 	public function getUri() {
-		return 'resource://' . $this->resourcePointer;
+		return 'resource://' . $this->hash;
 	}
 
 	/**
@@ -127,43 +133,75 @@ class Resource {
 	}
 
 	/**
-	 * Sets the resource pointer
+	 * Returns the sha1 hash of the content of this resource
 	 *
-	 * @param \TYPO3\Flow\Resource\ResourcePointer $resourcePointer
+	 * @return string The sha1 hash
+	 * @api
+	 */
+	public function getHash() {
+		return $this->hash;
+	}
+
+	/**
+	 * Sets the sha1 hash of the content of this resource
+	 *
+	 * @param string $hash The sha1 hash
 	 * @return void
 	 * @api
 	 */
-	public function setResourcePointer(\TYPO3\Flow\Resource\ResourcePointer $resourcePointer) {
-		$this->resourcePointer = $resourcePointer;
+	public function setHash($hash) {
+		if (strlen($hash) !== 40) {
+			throw new \InvalidArgumentException('Specified invalid hash to setHash()', 1362564119);
+		}
+		$this->hash = $hash;
+	}
+
+	/**
+	 * Sets the resource pointer
+	 *
+	 * Deprecated – use setHash() instead!
+	 *
+	 * @param \TYPO3\Flow\Resource\ResourcePointer $resourcePointer
+	 * @return void
+	 * @deprecated since 2.1.0
+	 * @see setHash()
+	 */
+	public function setResourcePointer(ResourcePointer $resourcePointer) {
+		$this->hash = $resourcePointer->getHash();
 	}
 
 	/**
 	 * Returns the resource pointer
 	 *
+	 * Deprecated – use getHash() instead!
+	 *
 	 * @return \TYPO3\Flow\Resource\ResourcePointer $resourcePointer
 	 * @api
+	 * @deprecated since 2.1.0
 	 */
 	public function getResourcePointer() {
-		return $this->resourcePointer;
+		return new ResourcePointer($this->hash);
 	}
 
 	/**
-	 * Sets the publishing configuration for this resource
+	 * Sets the name of the collection this resource should be part of
 	 *
-	 * @param \TYPO3\Flow\Resource\Publishing\PublishingConfigurationInterface $publishingConfiguration The publishing configuration
+	 * @param string $collectionName Name of the collection
 	 * @return void
+	 * @api
 	 */
-	public function setPublishingConfiguration(\TYPO3\Flow\Resource\Publishing\PublishingConfigurationInterface $publishingConfiguration = NULL) {
-		$this->publishingConfiguration = $publishingConfiguration;
+	public function setCollectionName($collectionName) {
+		$this->collectionName = $collectionName;
 	}
 
 	/**
-	 * Returns the publishing configuration for this resource
+	 * Returns the name of the collection this resource is part of
 	 *
-	 * @return \TYPO3\Flow\Resource\Publishing\PublishingConfigurationInterface The publishing configuration
+	 * @return string Name of the collection, for example "persistentResources"
+	 * @api
 	 */
-	public function getPublishingConfiguration() {
-		return $this->publishingConfiguration;
+	public function getCollectionName() {
+		return $this->collectionName;
 	}
 
 }

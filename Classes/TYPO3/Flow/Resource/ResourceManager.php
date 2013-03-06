@@ -23,27 +23,9 @@ class ResourceManager {
 
 	/**
 	 * @Flow\Inject
-	 * @var \TYPO3\Flow\Object\ObjectManagerInterface
-	 */
-	protected $objectManager;
-
-	/**
-	 * @Flow\Inject
 	 * @var \TYPO3\Flow\Reflection\ReflectionService
 	 */
 	protected $reflectionService;
-
-	/**
-	 * @Flow\Inject
-	 * @var \TYPO3\Flow\Resource\Publishing\ResourcePublisher
-	 */
-	protected $resourcePublisher;
-
-	/**
-	 * @Flow\Inject
-	 * @var \TYPO3\Flow\Utility\Environment
-	 */
-	protected $environment;
 
 	/**
 	 * @Flow\Inject
@@ -78,6 +60,21 @@ class ResourceManager {
 	 */
 	protected $importedResources;
 
+	 /**
+	  * @var array<\TYPO3\Flow\Resource\Storage\StorageInterface>
+	  */
+	 protected $storages;
+
+	 /**
+	  * @var array<\TYPO3\Flow\Resource\Target\TargetInterface>
+	  */
+	 protected $targets;
+
+	 /**
+	  * @var array<\TYPO3\Flow\Resource\Collection>
+	  */
+	 protected $collections;
+
 	/**
 	 * Injects the settings of this package
 	 *
@@ -95,15 +92,10 @@ class ResourceManager {
 	 * @return void
 	 */
 	public function initialize() {
-		$streamWrapperClassNames = $this->reflectionService->getAllImplementationClassNamesForInterface('TYPO3\Flow\Resource\Streams\StreamWrapperInterface');
-		foreach ($streamWrapperClassNames as $streamWrapperClassName) {
-			$scheme = $streamWrapperClassName::getScheme();
-			if (in_array($scheme, stream_get_wrappers())) {
-				stream_wrapper_unregister($scheme);
-			}
-			stream_wrapper_register($scheme, '\TYPO3\Flow\Resource\Streams\StreamWrapperAdapter');
-			\TYPO3\Flow\Resource\Streams\StreamWrapperAdapter::registerStreamWrapper($scheme, $streamWrapperClassName);
-		}
+		$this->initializeStreamWrapper();
+		$this->initializeStorages();
+		$this->initializeTargets();
+		$this->initializeCollections();
 
 			// For now this URI is hardcoded, but might be manageable in the future
 			// if additional persistent resources storages are supported.
@@ -111,43 +103,6 @@ class ResourceManager {
 		\TYPO3\Flow\Utility\Files::createDirectoryRecursively($this->persistentResourcesStorageBaseUri);
 
 		$this->importedResources = new \SplObjectStorage();
-	}
-
-	/**
-	 * Imports a resource (file) from the given location as a persistent resource.
-	 * On a successful import this method returns a Resource object representing the
-	 * newly imported persistent resource.
-	 *
-	 * @param string $uri An URI (can also be a path and filename) pointing to the resource to import
-	 * @return mixed A resource object representing the imported resource or FALSE if an error occurred.
-	 * @api
-	 */
-	public function importResource($uri) {
-		$pathInfo = pathinfo($uri);
-		if (isset($pathInfo['extension']) && substr(strtolower($pathInfo['extension']), -3, 3) === 'php') {
-			$this->systemLogger->log('Import of resources with a "php" extension is not allowed.', LOG_WARNING);
-			return FALSE;
-		}
-
-		$temporaryTargetPathAndFilename = $this->environment->getPathToTemporaryDirectory() . uniqid('Flow_ResourceImport_');
-		if (copy($uri, $temporaryTargetPathAndFilename) === FALSE) {
-			$this->systemLogger->log('Could not copy resource from "' . $uri . '" to temporary file "' . $temporaryTargetPathAndFilename . '".', LOG_WARNING);
-			return FALSE;
-		}
-
-		$hash = sha1_file($temporaryTargetPathAndFilename);
-		$finalTargetPathAndFilename = $this->persistentResourcesStorageBaseUri . $hash;
-		if (rename($temporaryTargetPathAndFilename, $finalTargetPathAndFilename) === FALSE) {
-			unlink($temporaryTargetPathAndFilename);
-			$this->systemLogger->log('Could not copy temporary file from "' . $temporaryTargetPathAndFilename . '" to final destination "' . $finalTargetPathAndFilename . '".', LOG_WARNING);
-			return FALSE;
-		}
-		$this->fixFilePermissions($finalTargetPathAndFilename);
-
-		$resource = $this->createResourceFromHashAndFilename($hash, $pathInfo['basename']);
-		$this->attachImportedResource($resource);
-
-		return $resource;
 	}
 
 	/**
@@ -159,13 +114,10 @@ class ResourceManager {
 	 * @param string $filename
 	 * @return \TYPO3\Flow\Resource\Resource A resource object representing the created resource or FALSE if an error occurred.
 	 * @api
+	 * TODO: REFACTOR
 	 */
 	public function createResourceFromContent($content, $filename) {
 		$pathInfo = pathinfo($filename);
-		if (!isset($pathInfo['extension']) || substr(strtolower($pathInfo['extension']), -3, 3) === 'php') {
-			$this->systemLogger->log('Creation of resources with a "php" extension is not allowed.', LOG_WARNING);
-			return FALSE;
-		}
 
 		$hash = sha1($content);
 		$finalTargetPathAndFilename = \TYPO3\Flow\Utility\Files::concatenatePaths(array($this->persistentResourcesStorageBaseUri, $hash));
@@ -181,6 +133,65 @@ class ResourceManager {
 		$resource = $this->createResourceFromHashAndFilename($hash, $pathInfo['basename']);
 		$this->attachImportedResource($resource);
 
+		return $resource;
+	}
+
+	/**
+	 * Imports a resource (file) from the given location as a persistent resource.
+	 * On a successful import this method returns a Resource object representing the
+	 * newly imported persistent resource.
+	 *
+	 * @param string $uri An URI (can also be a path and filename) pointing to the resource to import
+	 * @param string $collectionName Name of the collection this uploaded resource should be added to
+	 * @return mixed A resource object representing the imported resource or FALSE if an error occurred.
+	 * @api
+	 */
+	public function importResource($uri, $collectionName = 'persistentResources') {
+		if (!isset($this->collections[$collectionName])) {
+			$this->systemLogger->log('Tried to import a file into the resource collection "%s" but no such collection exists. Please check your settings and the code which triggered the import.', LOG_WARNING);
+			return FALSE;
+		}
+
+		$resource = $this->collections[$collectionName]->importResource($uri);
+		if (is_string($resource)) {
+			$this->systemLogger->log(sprintf('Importing a file into the resource collection "%s" failed: %s', $collectionName), LOG_ERR);
+			return FALSE;
+		}
+
+		$this->importedResources->attach($resource);
+
+		$this->systemLogger->log(sprintf('Successfully imported file "%s" into the resource collection "%s" (storage: %s / %s)', $uri, $collectionName, $this->collections[$collectionName]->getStorage()->getName(), get_class($this->collections[$collectionName]->getStorage())), LOG_DEBUG);
+		return $resource;
+	}
+
+	/**
+	 * Imports a resource (file) from the given upload info array as a persistent
+	 * resource.
+	 *
+	 * On a successful import this method returns a Resource object representing
+	 * the newly imported persistent resource.
+	 *
+	 * @param array $uploadInfo An array detailing the resource to import (expected keys: name, tmp_name)
+	 * @param string $collectionName Name of the collection this uploaded resource should be added to
+	 * @return mixed A resource object representing the imported resource or FALSE if an error occurred.
+	 */
+	public function importUploadedResource(array $uploadInfo, $collectionName) {
+		if (!isset($this->collections[$collectionName])) {
+			$this->systemLogger->log('Tried to import an uploaded file into the resource collection "%s" but no such collection exists. Please check your settings and HTML forms.', LOG_WARNING);
+			return FALSE;
+		}
+		$resource = $this->collections[$collectionName]->importUploadedResource($uploadInfo);
+		if (is_string($resource)) {
+			$this->systemLogger->log(sprintf('Importing an uploaded file into the resource collection "%s" failed: %s', $collectionName), LOG_ERR);
+			return FALSE;
+		}
+
+		$pathInfo = pathinfo($uploadInfo['name']);
+		$this->importedResources[$resource] = array(
+			'originalFilename' => $pathInfo['basename']
+		);
+
+		$this->systemLogger->log(sprintf('Successfully imported an uploaded file into the resource collection "%s" (storage: %s / %s)', $collectionName, $this->collections[$collectionName]->getStorage()->getName(), get_class($this->collections[$collectionName]->getStorage())), LOG_DEBUG);
 		return $resource;
 	}
 
@@ -203,38 +214,69 @@ class ResourceManager {
 	}
 
 	/**
-	 * Imports a resource (file) from the given upload info array as a persistent
-	 * resource.
-	 * On a successful import this method returns a Resource object representing
-	 * the newly imported persistent resource.
+	 * Deletes the file represented by the given resource instance.
 	 *
-	 * @param array $uploadInfo An array detailing the resource to import (expected keys: name, tmp_name)
-	 * @return mixed A resource object representing the imported resource or FALSE if an error occurred.
+	 * @param \TYPO3\Flow\Resource\Resource $resource
+	 * @return boolean
+	 * TODO: REFACTOR
 	 */
-	public function importUploadedResource(array $uploadInfo) {
-		$pathInfo = pathinfo($uploadInfo['name']);
-		if (!isset($pathInfo['extension']) || substr(strtolower($pathInfo['extension']), -3, 3) === 'php' ) {
-			return FALSE;
+	public function deleteResource($resource) {
+		return FALSE;
+	}
+
+	/**
+	 * Prepares a mirror of public package resources that is accessible through
+	 * the web server directly.
+	 *
+	 * @return void
+	 */
+	public function publishPublicPackageResources() {
+		$packageResourcesPublished = $this->statusCache->has('packageResourcesPublished');
+		if ($this->settings['resource']['publishing']['detectPackageResourceChanges'] === FALSE && $packageResourcesPublished) {
+			return;
 		}
 
-		if (!file_exists($uploadInfo['tmp_name'])) {
-			return FALSE;
-		}
-		$hash = sha1_file($uploadInfo['tmp_name']);
-		$finalTargetPathAndFilename = $this->persistentResourcesStorageBaseUri . $hash;
-		if (move_uploaded_file($uploadInfo['tmp_name'], $finalTargetPathAndFilename) === FALSE) {
-			return FALSE;
-		}
-		$this->fixFilePermissions($finalTargetPathAndFilename);
-		$resource = new \TYPO3\Flow\Resource\Resource();
-		$resource->setFilename($pathInfo['basename']);
+		$target = $this->collections['staticResources']->getTarget();
+		$target->publish($this->collections['staticResources']);
 
-		$resourcePointer = $this->getResourcePointerForHash($hash);
-		$resource->setResourcePointer($resourcePointer);
-		$this->importedResources[$resource] = array(
-			'originalFilename' => $pathInfo['basename']
-		);
-		return $resource;
+		if ($packageResourcesPublished === FALSE) {
+			$this->statusCache->set('packageResourcesPublished', 'y', array(\TYPO3\Flow\Cache\Frontend\FrontendInterface::TAG_PACKAGE));
+		}
+	}
+
+	/**
+	 * Returns the web accessible URI for the given resource object
+	 *
+	 * @param \TYPO3\Flow\Resource\Resource $resource The resource object
+	 * @return string A URI as a string
+	 */
+	public function getPublicPersistentResourceUri(Resource $resource) {
+		$collectionName = $resource->getCollectionName();
+		if (!isset($this->collections[$collectionName])) {
+			return '404-Collection-Does-Not-Exist';
+		}
+		$target = $this->collections[$collectionName]->getTarget();
+		return $target->getPublicPersistentResourceUri($resource->getHash());
+	}
+
+	/**
+	 * @param $packageKey
+	 * @param $relativePathAndFilename
+	 * @return mixed
+	 */
+	public function getPublicPackageResourceUri($packageKey, $relativePathAndFilename) {
+		$target = $this->collections['staticResources']->getTarget();
+		return $target->getPublicStaticResourceUri($packageKey . '/Resources/Public/' . $relativePathAndFilename);
+	}
+
+	/**
+	 * Returns a storage instance by the given name
+	 *
+	 * @param string $storageName Name of the storage as defined in the settings
+	 * @return \TYPO3\Flow\Resource\Storage\StorageInterface
+	 */
+	public function getStorage($storageName) {
+		return isset($this->storages[$storageName]) ? $this->storages[$storageName] : NULL;
 	}
 
 	/**
@@ -246,7 +288,7 @@ class ResourceManager {
 	 * @param string $hash
 	 * @return \TYPO3\Flow\Resource\ResourcePointer
 	 */
-	public function getResourcePointerForHash($hash) {
+	protected function getResourcePointerForHash($hash) {
 		$resourcePointer = $this->persistenceManager->getObjectByIdentifier($hash, 'TYPO3\Flow\Resource\ResourcePointer');
 		if (!$resourcePointer) {
 			$resourcePointer = new \TYPO3\Flow\Resource\ResourcePointer($hash);
@@ -254,63 +296,6 @@ class ResourceManager {
 		}
 
 		return $resourcePointer;
-	}
-
-	/**
-	 * Deletes the file represented by the given resource instance.
-	 *
-	 * @param \TYPO3\Flow\Resource\Resource $resource
-	 * @return boolean
-	 */
-	public function deleteResource($resource) {
-			// instanceof instead of type hinting so it can be used as slot
-		if ($resource instanceof \TYPO3\Flow\Resource\Resource) {
-			$this->resourcePublisher->unpublishPersistentResource($resource);
-			if (is_file($this->persistentResourcesStorageBaseUri . $resource->getResourcePointer()->getHash())) {
-				unlink($this->persistentResourcesStorageBaseUri . $resource->getResourcePointer()->getHash());
-				return TRUE;
-			}
-		}
-		return FALSE;
-	}
-
-	/**
-	 * Method which returns the base URI of the location where persistent resources
-	 * are stored.
-	 *
-	 * @return string The URI
-	 */
-	public function getPersistentResourcesStorageBaseUri() {
-		return $this->persistentResourcesStorageBaseUri;
-	}
-
-	/**
-	 * Prepares a mirror of public package resources that is accessible through
-	 * the web server directly.
-	 *
-	 * @param array $activePackages
-	 * @return void
-	 */
-	public function publishPublicPackageResources(array $activePackages) {
-		if ($this->settings['resource']['publishing']['detectPackageResourceChanges'] === FALSE && $this->statusCache->has('packageResourcesPublished')) {
-			return;
-		}
-		foreach ($activePackages as $packageKey => $package) {
-			$this->resourcePublisher->publishStaticResources($package->getResourcesPath() . 'Public/', 'Packages/' . $packageKey . '/');
-		}
-		if (!$this->statusCache->has('packageResourcesPublished')) {
-			$this->statusCache->set('packageResourcesPublished', 'y', array(\TYPO3\Flow\Cache\Frontend\FrontendInterface::TAG_PACKAGE));
-		}
-	}
-
-	/**
-	 * Fixes the permissions as needed for Flow to run fine in web and cli context.
-	 *
-	 * @param string $pathAndFilename
-	 * @return void
-	 */
-	protected function fixFilePermissions($pathAndFilename) {
-		@chmod($pathAndFilename, 0666 ^ umask());
 	}
 
 	/**
@@ -342,6 +327,105 @@ class ResourceManager {
 			'originalFilename' => $resource->getFilename()
 		));
 	}
+
+	/**
+	 * Registers a Stream Wrapper Adapter for the resource:// scheme.
+	 *
+	 * @return void
+	 */
+	protected function initializeStreamWrapper() {
+		$streamWrapperClassNames = $this->reflectionService->getAllImplementationClassNamesForInterface('TYPO3\Flow\Resource\Streams\StreamWrapperInterface');
+		foreach ($streamWrapperClassNames as $streamWrapperClassName) {
+			$scheme = $streamWrapperClassName::getScheme();
+			if (in_array($scheme, stream_get_wrappers())) {
+				stream_wrapper_unregister($scheme);
+			}
+			stream_wrapper_register($scheme, '\TYPO3\Flow\Resource\Streams\StreamWrapperAdapter');
+			\TYPO3\Flow\Resource\Streams\StreamWrapperAdapter::registerStreamWrapper($scheme, $streamWrapperClassName);
+		}
+	}
+
+	/**
+	 * Initializes storage objects according to the current settings
+	 *
+	 * @return void
+	 */
+	protected function initializeStorages() {
+		foreach ($this->settings['resource']['storages'] as $storageName => $storageDefinition) {
+			if (!isset($storageDefinition['storage'])) {
+				throw new Exception(sprintf('The configuration for the resource storage "%s" defined in your settings has no valid "storage" option. Please check the configuration syntax and make sure to specify a valid storage class name.', $storageName), 1361467211);
+			}
+			if (!class_exists($storageDefinition['storage'])) {
+				throw new Exception(sprintf('The configuration for the resource storage "%s" defined in your settings has not defined a valid "storage" option. Please check the configuration syntax and make sure that the specified class "%s" really exists.', $storageName, $storageDefinition['storage']), 1361467212);
+			}
+			$options = (isset($storageDefinition['storageOptions']) ? $storageDefinition['storageOptions'] : array());
+			$this->storages[$storageName] = new $storageDefinition['storage']($storageName, $options);
+		}
+	}
+
+	/**
+	 *
+	 *
+	 * @return void
+	 */
+	protected function initializeTargets() {
+		foreach ($this->settings['resource']['targets'] as $targetName => $targetDefinition) {
+			if (!isset($targetDefinition['target'])) {
+				throw new Exception(sprintf('The configuration for the resource target "%s" defined in your settings has no valid "target" option. Please check the configuration syntax and make sure to specify a valid target class name.', $targetName), 1361467838);
+			}
+			if (!class_exists($targetDefinition['target'])) {
+				throw new Exception(sprintf('The configuration for the resource target "%s" defined in your settings has not defined a valid "target" option. Please check the configuration syntax and make sure that the specified class "%s" really exists.', $targetName, $targetDefinition['target']), 1361467839);
+			}
+			$options = (isset($targetDefinition['targetOptions']) ? $targetDefinition['targetOptions'] : array());
+			$this->targets[$targetName] = new $targetDefinition['target']($targetName, $options);
+		}
+	}
+
+	/**
+	 *
+	 *
+	 * @return void
+	 */
+	protected function initializeCollections() {
+		foreach ($this->settings['resource']['collections'] as $collectionName => $collectionDefinition) {
+			if (!isset($collectionDefinition['sources']) || !is_array($collectionDefinition['sources'])) {
+				throw new Exception(sprintf('The configuration for the resource collection "%s" defined in your settings has no valid "sources" option. Please check the configuration syntax.', $collectionName), 1361468805);
+			}
+			if (!isset($collectionDefinition['target'])) {
+				throw new Exception(sprintf('The configuration for the resource collection "%s" defined in your settings has no valid "target" option. Please check the configuration syntax and make sure to specify a valid target class name.', $collectionName), 1361468923);
+			}
+			if (!isset($this->targets[$collectionDefinition['target']])) {
+				throw new Exception(sprintf('The configuration for the resource collection "%s" defined in your settings has not defined a valid "target" option. Please check the configuration syntax and make sure that the specified class "%s" really exists.', $collectionName, $collectionDefinition['target']), 1361468924);
+			}
+
+			$sources = array();
+			foreach ($collectionDefinition['sources'] as $index => $sourceDefinition) {
+				if (!isset($sourceDefinition['storage'])) {
+					throw new Exception(sprintf('The source definition #%s of the resource collection "%s" defined in your settings has no valid "storage" option. Please check the configuration syntax and make sure to specify a valid storage class name.', $index, $collectionName), 1361481030);
+				}
+				if (!isset($this->storages[$sourceDefinition['storage']])) {
+					throw new Exception(sprintf('The source definition #%s of the resource collection "%s" defined in your settings referred to a non-existing storage "%s". Please check the configuration syntax and make sure to specify a valid storage class name.', $index, $collectionName, $sourceDefinition['storage']), 1361481031);
+				}
+				$source = $sourceDefinition;
+				$source['storage'] = $this->storages[$sourceDefinition['storage']];
+				$sources[] = $source;
+			}
+
+			$this->collections[$collectionName] = new Collection($collectionName, $sources, $this->targets[$collectionDefinition['target']]);
+		}
+	}
+
+	/**
+	 * Wrapper around realpath(). Needed for testing, as realpath() cannot be mocked
+	 * by vfsStream.
+	 *
+	 * @param string $path
+	 * @return string
+	 */
+	protected function realpath($path) {
+		return realpath($path);
+	}
+
 }
 
 ?>
